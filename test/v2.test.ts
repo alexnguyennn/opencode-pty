@@ -9,7 +9,13 @@ import {
   ptyTools,
   stopActiveServer,
 } from '../src/v2/index.ts'
-import type { CommandDraft, CommandInfo, PluginContextV2 } from '../src/v2/types.ts'
+import type {
+  CommandDefinition,
+  CommandDraft,
+  PluginContextV2,
+  ToolDraft,
+  ToolInfoV2,
+} from '../src/v2/types.ts'
 
 describe('OpenCode V2 Plugin API', () => {
   afterEach(() => {
@@ -31,15 +37,60 @@ describe('OpenCode V2 Plugin API', () => {
     })
   })
 
+  describe('Tool Registration via ctx.tool.transform', () => {
+    it('registers every PTY tool with name, input schema and execute', async () => {
+      const registeredTools: Record<string, ToolInfoV2> = {}
+
+      const draft: ToolDraft = {
+        add: (tool) => {
+          registeredTools[tool.name] = tool
+        },
+      }
+
+      const mockTransform = mock(async (callback: (draft: ToolDraft) => void) => {
+        callback(draft)
+      })
+
+      const ctx: PluginContextV2 = {
+        options: {},
+        tool: {
+          transform: mockTransform,
+        },
+      }
+
+      await Plugin.setup(ctx)
+
+      expect(mockTransform).toHaveBeenCalled()
+      expect(Object.keys(registeredTools).sort()).toEqual([
+        'pty_kill',
+        'pty_list',
+        'pty_read',
+        'pty_spawn',
+        'pty_write',
+      ])
+
+      for (const tool of Object.values(registeredTools)) {
+        expect(typeof tool.description).toBe('string')
+        expect(tool.description.length).toBeGreaterThan(0)
+        expect(tool.input).toBeDefined()
+        expect(typeof tool.execute).toBe('function')
+      }
+    })
+
+    it('does not fail when the tool transform is unavailable', async () => {
+      const ctx: PluginContextV2 = { options: {} }
+      await Plugin.setup(ctx)
+      expect(getActiveServer()).toBeNull()
+    })
+  })
+
   describe('Command Registration via ctx.command.transform', () => {
-    it('registers slash commands in the command draft', async () => {
-      const registeredCommands: Record<string, CommandInfo> = {}
+    it('registers slash commands with an execute handler', async () => {
+      const registeredCommands: Record<string, CommandDefinition> = {}
 
       const draft: CommandDraft = {
-        update: (name: string, updateFn: (cmd: CommandInfo) => void) => {
-          const entry: CommandInfo = {}
-          registeredCommands[name] = entry
-          updateFn(entry)
+        add: (command) => {
+          registeredCommands[command.name] = command
         },
       }
 
@@ -60,9 +111,11 @@ describe('OpenCode V2 Plugin API', () => {
       expect(registeredCommands[PTY_OPEN_CLIENT_COMMAND]?.description).toBe(
         'Open PTY Sessions Web Interface'
       )
+      expect(typeof registeredCommands[PTY_OPEN_CLIENT_COMMAND]?.execute).toBe('function')
       expect(registeredCommands[PTY_SHOW_SERVER_URL_COMMAND]?.description).toBe(
         'Show PTY Sessions Web Interface URL'
       )
+      expect(typeof registeredCommands[PTY_SHOW_SERVER_URL_COMMAND]?.execute).toBe('function')
     })
   })
 

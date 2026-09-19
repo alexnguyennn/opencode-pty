@@ -51,12 +51,14 @@ describe('ptySpawn Integration', () => {
         worktree: '/tmp',
       }
     )
+    // @opencode-ai/plugin >= 1.18 types ToolResult as string | { output }.
+    const output = typeof result === 'string' ? result : result.output
 
-    expect(result).toContain('<pty_spawned>')
-    expect(result).toContain('Command: echo Hello World')
-    expect(result).toContain('Status: running')
+    expect(output).toContain('<pty_spawned>')
+    expect(output).toContain('Command: echo Hello World')
+    expect(output).toContain('Status: running')
 
-    const sessionIdMatch = result.match(/ID: (.+)/)
+    const sessionIdMatch = output.match(/ID: (.+)/)
     expect(sessionIdMatch).toBeTruthy()
     const sessionId = sessionIdMatch?.[1] ?? ''
 

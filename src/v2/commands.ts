@@ -37,21 +37,32 @@ export async function handleShowServerUrlCommand(options?: ServerOptions): Promi
   return `PTY Sessions Web Interface URL: ${server.server.url.origin}`
 }
 
-export function registerV2Commands(draft: CommandDraft, _options?: OpencodePtyOptions): void {
-  if (typeof draft.update === 'function') {
-    draft.update(PTY_OPEN_CLIENT_COMMAND, (cmd) => {
-      if (cmd) {
-        cmd.description = 'Open PTY Sessions Web Interface'
-        cmd.template =
-          'This command will start the PTY Sessions Web Interface in your default browser.'
-      }
-    })
-
-    draft.update(PTY_SHOW_SERVER_URL_COMMAND, (cmd) => {
-      if (cmd) {
-        cmd.description = 'Show PTY Sessions Web Interface URL'
-        cmd.template = 'This command will show the PTY Sessions Web Interface URL.'
-      }
-    })
+/**
+ * Registers the PTY slash commands with opencode v2's `CommandEditor`.
+ *
+ * opencode v2's `command.transform` draft exposes `add(definition)` only
+ * (there is no `update`), so commands must be created with an `execute`
+ * handler rather than "updated".
+ */
+export function registerV2Commands(draft: CommandDraft, options?: OpencodePtyOptions): void {
+  if (typeof draft.add !== 'function') {
+    return
   }
+  const add = draft.add.bind(draft)
+
+  add({
+    name: PTY_OPEN_CLIENT_COMMAND,
+    description: 'Open PTY Sessions Web Interface',
+    execute: async () => {
+      await handleOpenClientCommand(options)
+    },
+  })
+
+  add({
+    name: PTY_SHOW_SERVER_URL_COMMAND,
+    description: 'Show PTY Sessions Web Interface URL',
+    execute: async () => {
+      await handleShowServerUrlCommand(options)
+    },
+  })
 }
