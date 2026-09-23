@@ -74,6 +74,7 @@ describe('OpenCode V2 Live Integration', () => {
         transform: async (callback) => {
           commandTransformCalled = true
           await callback(commandDraft)
+          return undefined
         },
         reload: async () => {},
       },
@@ -81,6 +82,7 @@ describe('OpenCode V2 Live Integration', () => {
         transform: async (callback) => {
           toolTransformCalled = true
           await callback(toolDraft)
+          return undefined
         },
         reload: async () => {},
       },

@@ -1,9 +1,17 @@
 import { createV2Adapter } from '../adapters/v2/index.ts'
 import { installHostAdapter } from '../adapters/index.ts'
-import { getOrCreateServer, registerV2Commands } from './commands.ts'
+import { manager } from '../plugin/pty/manager.ts'
+import { getOrCreateServer, registerV2Commands, stopActiveServer } from './commands.ts'
 import { V2SessionNotifier } from './notifier.ts'
 import { registerV2Tools } from './tools.ts'
-import { define, type OpencodePtyOptions, type PluginContextV2, type PluginV2 } from './types.ts'
+import {
+  define,
+  type OpencodePtyOptions,
+  type PluginContextV2,
+  type PluginV2,
+  type Registration,
+  type V2Event,
+} from './types.ts'
 
 export * from './commands.ts'
 export * from './notifier.ts'
@@ -17,6 +25,11 @@ export * from './types.ts'
 export const Plugin: PluginV2 = define({
   id: 'opencode-pty',
   setup: async (ctx: PluginContextV2) => {
+    const abortController = new AbortController()
+    const registrations: Registration[] = []
+    let eventConsumer: Promise<void> | undefined
+    let cleanupPromise: Promise<void> | undefined
+
     // opencode v2 plugin contexts are server clients: `ctx.session.prompt`
     // wakes a session with a user prompt, preserving the session's current
     // model by construction. Pre-2.0 hosts without the session domain still
@@ -25,6 +38,7 @@ export const Plugin: PluginV2 = define({
     const notifier =
       typeof ctx.session?.prompt === 'function' ? new V2SessionNotifier(ctx.session) : undefined
     if (!notifier) {
+      manager.setNotifier(null)
       console.warn(
         '[opencode-pty] host does not expose ctx.session.prompt — exit notifications disabled'
       )
@@ -34,15 +48,41 @@ export const Plugin: PluginV2 = define({
     installHostAdapter(adapter)
 
     if (ctx.tool && typeof ctx.tool.transform === 'function') {
-      await ctx.tool.transform((draft) => {
+      const registration = await ctx.tool.transform((draft) => {
         registerV2Tools(draft)
       })
+      if (registration) registrations.push(registration)
     }
 
     if (ctx.command && typeof ctx.command.transform === 'function') {
-      await ctx.command.transform((draft) => {
+      const registration = await ctx.command.transform((draft) => {
         registerV2Commands(draft, ctx.options as OpencodePtyOptions | undefined)
       })
+      if (registration) registrations.push(registration)
+    }
+
+    if (ctx.event && typeof ctx.event.subscribe === 'function') {
+      eventConsumer = (async () => {
+        try {
+          const events = ctx.event?.subscribe({ signal: abortController.signal })
+          if (!events) return
+
+          const eventIterator: AsyncIterator<V2Event> = events[Symbol.asyncIterator]()
+          while (true) {
+            const result = await eventIterator.next()
+            if (result.done) break
+
+            const event = result.value
+            if (event.type === 'session.deleted' && typeof event.data?.sessionID === 'string') {
+              adapter.onSessionDeleted?.(event.data.sessionID)
+            }
+          }
+        } catch (error) {
+          if (!abortController.signal.aborted && !isAbortError(error)) {
+            console.error('[opencode-pty] V2 event subscription failed', error)
+          }
+        }
+      })()
     }
 
     if (ctx.options?.autostart) {
@@ -51,7 +91,50 @@ export const Plugin: PluginV2 = define({
         hostname: ctx.options.hostname,
       })
     }
+
+    return () => {
+      if (cleanupPromise) return cleanupPromise
+
+      cleanupPromise = (async () => {
+        abortController.abort()
+
+        const cleanupTasks: Promise<unknown>[] = []
+        if (eventConsumer) cleanupTasks.push(eventConsumer)
+        for (const registration of registrations) {
+          cleanupTasks.push(Promise.resolve().then(() => registration.dispose()))
+        }
+
+        try {
+          manager.setNotifier(null)
+        } catch (error) {
+          console.error('[opencode-pty] failed to reset notifier during cleanup', error)
+        }
+        try {
+          manager.clearAllSessions()
+        } catch (error) {
+          console.error('[opencode-pty] failed to clear PTY sessions during cleanup', error)
+        }
+        try {
+          stopActiveServer()
+        } catch (error) {
+          console.error('[opencode-pty] failed to stop web server during cleanup', error)
+        }
+
+        const results = await Promise.allSettled(cleanupTasks)
+        for (const result of results) {
+          if (result.status === 'rejected' && !isAbortError(result.reason)) {
+            console.error('[opencode-pty] V2 registration cleanup failed', result.reason)
+          }
+        }
+      })()
+
+      return cleanupPromise
+    }
   },
 })
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
+}
 
 export default Plugin

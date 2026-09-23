@@ -1,5 +1,20 @@
 import type { Plugin } from '@opencode/plugin'
 
+export interface Registration {
+  readonly dispose: () => Promise<void> | void
+}
+
+export type PluginCleanup = () => Promise<void> | void
+
+export interface V2Event {
+  readonly type: string
+  readonly data?: {
+    readonly sessionID?: string
+    readonly [key: string]: unknown
+  }
+  readonly [key: string]: unknown
+}
+
 export interface OpencodePtyOptions {
   /**
    * Fixed port for the PTY Web UI observer server.
@@ -63,12 +78,17 @@ export interface PluginContextV2 {
   readonly command?: {
     transform(
       callback: (commands: CommandDraft) => Promise<void> | void
-    ): Promise<unknown> | undefined
+    ): Promise<Registration | undefined> | undefined
     reload?(): Promise<void> | void
   }
   readonly tool?: {
-    transform(callback: (tools: ToolDraft) => Promise<void> | void): Promise<unknown> | undefined
+    transform(
+      callback: (tools: ToolDraft) => Promise<void> | void
+    ): Promise<Registration | undefined> | undefined
     reload?(): Promise<void> | void
+  }
+  readonly event?: {
+    subscribe(options?: { readonly signal?: AbortSignal }): AsyncIterable<V2Event>
   }
   /**
    * opencode v2's plugin contexts are server clients: the `session` domain is
@@ -84,7 +104,9 @@ export interface PluginContextV2 {
 
 export interface PluginV2 {
   readonly id: string
-  readonly setup: (context: PluginContextV2) => Promise<void> | void
+  readonly setup: (
+    context: PluginContextV2
+  ) => Promise<PluginCleanup | undefined> | PluginCleanup | undefined
 }
 
 export function define(plugin: PluginV2): PluginV2 {
