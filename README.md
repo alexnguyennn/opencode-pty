@@ -68,6 +68,9 @@ OpenCode V2 uses the new plugin API. You can load `opencode-pty/v2` and optional
 
 OpenCode will automatically install the plugin on next run.
 
+> [!WARNING]
+> **Known OpenCode V2 gap:** `notifyOnExit` is covered by the simulated V2 host tests, but a live OpenCode V2 session did not receive the expected `<pty_exited>` prompt after a PTY exited with code 7. The plugin remained active, the PTY exited and was cleaned up, and the server log contained no notification-delivery error. Tool registration, slash commands, PTY operations, session-deletion cleanup, and graceful-restart cleanup all passed live. Until the host notification path is resolved, use `pty_read` or `pty_list` to confirm completion in V2 sessions.
+
 ## Updating
 
 OpenCode automatically checks for and installs plugin updates on startup. You don't need to do anything manually!
