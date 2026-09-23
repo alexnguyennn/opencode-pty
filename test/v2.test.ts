@@ -213,7 +213,7 @@ describe('OpenCode V2 Plugin API', () => {
       expect(manager.getNotifier()).not.toBeInstanceOf(V2SessionNotifier)
     })
 
-    it('does not retain an earlier V2 notifier when the next setup has no session domain', async () => {
+    it('does not let a setup without a session domain erase another live notifier', async () => {
       const firstCleanup = await Plugin.setup({
         options: {},
         session: {
@@ -224,9 +224,106 @@ describe('OpenCode V2 Plugin API', () => {
 
       const secondCleanup = await Plugin.setup({ options: {} })
 
-      expect(manager.getNotifier()).not.toBeInstanceOf(V2SessionNotifier)
+      expect(manager.getNotifier()).toBeInstanceOf(V2SessionNotifier)
       await secondCleanup?.()
+      expect(manager.getNotifier()).toBeInstanceOf(V2SessionNotifier)
       await firstCleanup?.()
+      expect(manager.getNotifier()).not.toBeInstanceOf(V2SessionNotifier)
+    })
+
+    it('keeps the newest live notifier when an older plugin instance is cleaned up', async () => {
+      const firstCleanup = await Plugin.setup({
+        options: {},
+        session: {
+          prompt: async () => ({}) as never,
+        },
+      })
+      const firstNotifier = manager.getNotifier()
+      const secondCleanup = await Plugin.setup({
+        options: {},
+        session: {
+          prompt: async () => ({}) as never,
+        },
+      })
+      const secondNotifier = manager.getNotifier()
+
+      expect(secondNotifier).toBeInstanceOf(V2SessionNotifier)
+      expect(secondNotifier).not.toBe(firstNotifier)
+
+      await firstCleanup?.()
+      expect(manager.getNotifier()).toBe(secondNotifier)
+
+      await secondCleanup?.()
+      expect(manager.getNotifier()).not.toBeInstanceOf(V2SessionNotifier)
+    })
+
+    it('restores an older live notifier when the newest plugin instance is cleaned up', async () => {
+      const firstCleanup = await Plugin.setup({
+        options: {},
+        session: {
+          prompt: async () => ({}) as never,
+        },
+      })
+      const firstNotifier = manager.getNotifier()
+      const secondCleanup = await Plugin.setup({
+        options: {},
+        session: {
+          prompt: async () => ({}) as never,
+        },
+      })
+
+      await secondCleanup?.()
+      expect(manager.getNotifier()).toBe(firstNotifier)
+
+      await firstCleanup?.()
+      expect(manager.getNotifier()).not.toBeInstanceOf(V2SessionNotifier)
+    })
+
+    it('restores the notifier that the first V2 plugin instance displaced', async () => {
+      const previousNotifier = { sendExitNotification: async () => {} }
+      manager.setNotifier(previousNotifier)
+      const cleanup = await Plugin.setup({
+        options: {},
+        session: {
+          prompt: async () => ({}) as never,
+        },
+      })
+
+      expect(manager.getNotifier()).toBeInstanceOf(V2SessionNotifier)
+
+      await cleanup?.()
+      expect(manager.getNotifier()).toBe(previousNotifier)
+    })
+
+    it('does not publish a notifier when setup fails', async () => {
+      const previousNotifier = { sendExitNotification: async () => {} }
+      manager.setNotifier(previousNotifier)
+
+      await expect(
+        Plugin.setup({
+          options: {},
+          session: {
+            prompt: async () => ({}) as never,
+          },
+          tool: {
+            transform: async () => {
+              throw new Error('transform failed')
+            },
+          },
+        })
+      ).rejects.toThrow('transform failed')
+
+      expect(manager.getNotifier()).toBe(previousNotifier)
+
+      const cleanup = await Plugin.setup({
+        options: {},
+        session: {
+          prompt: async () => ({}) as never,
+        },
+      })
+      await cleanup?.()
+
+      expect(manager.getNotifier()).toBe(previousNotifier)
     })
 
     it('is safe to clean up repeatedly and disposes registrations only once', async () => {

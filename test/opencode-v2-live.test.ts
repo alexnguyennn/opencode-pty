@@ -92,7 +92,7 @@ describe('OpenCode V2 Live Integration', () => {
     }
 
     // Run setup through V2 plugin contract
-    await Plugin.setup(simulatedContext)
+    const cleanup = await Plugin.setup(simulatedContext)
 
     expect(toolTransformCalled).toBe(true)
     expect(Object.keys(registeredTools).sort()).toEqual([
@@ -121,6 +121,7 @@ describe('OpenCode V2 Live Integration', () => {
 
     expect(server.server.url.port).toBe('48999')
     expect(server.server.url.hostname).toBe('127.0.0.1')
+    await cleanup?.()
   })
 
   it('delivers <pty_exited> via ctx.session.prompt when notifyOnExit is set', async () => {
@@ -139,7 +140,7 @@ describe('OpenCode V2 Live Integration', () => {
       },
     }
 
-    await Plugin.setup(simulatedContext)
+    const cleanup = await Plugin.setup(simulatedContext)
     // The setup wires the V2 notifier into the manager.
     expect(manager.getNotifier()).toBeInstanceOf(V2SessionNotifier)
 
@@ -164,6 +165,7 @@ describe('OpenCode V2 Live Integration', () => {
     expect(prompt?.text).toContain(
       'Process failed. Use pty_read with the pattern parameter to search for errors in the output.'
     )
+    await cleanup?.()
   })
 
   it('warns and disables notifications when the host has no session domain', async () => {

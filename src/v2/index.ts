@@ -1,5 +1,6 @@
 import { createV2Adapter } from '../adapters/v2/index.ts'
 import { installHostAdapter } from '../adapters/index.ts'
+import type { SessionNotifier } from '../adapters/types.ts'
 import { manager } from '../plugin/pty/manager.ts'
 import { getOrCreateServer, registerV2Commands, stopActiveServer } from './commands.ts'
 import { V2SessionNotifier } from './notifier.ts'
@@ -17,6 +18,9 @@ export * from './commands.ts'
 export * from './notifier.ts'
 export * from './tools.ts'
 export * from './types.ts'
+
+const activeNotifiers: V2SessionNotifier[] = []
+let displacedNotifier: SessionNotifier | null | undefined
 
 /**
  * OpenCode V2 Plugin definition for opencode-pty.
@@ -38,14 +42,12 @@ export const Plugin: PluginV2 = define({
     const notifier =
       typeof ctx.session?.prompt === 'function' ? new V2SessionNotifier(ctx.session) : undefined
     if (!notifier) {
-      manager.setNotifier(null)
       console.warn(
         '[opencode-pty] host does not expose ctx.session.prompt — exit notifications disabled'
       )
     }
 
     const adapter = createV2Adapter({ notifier })
-    installHostAdapter(adapter)
 
     if (ctx.tool && typeof ctx.tool.transform === 'function') {
       const registration = await ctx.tool.transform((draft) => {
@@ -92,6 +94,9 @@ export const Plugin: PluginV2 = define({
       })
     }
 
+    if (notifier) activateNotifier(notifier)
+    installHostAdapter(adapter)
+
     return () => {
       if (cleanupPromise) return cleanupPromise
 
@@ -105,7 +110,9 @@ export const Plugin: PluginV2 = define({
         }
 
         try {
-          manager.setNotifier(null)
+          if (notifier) {
+            deactivateNotifier(notifier)
+          }
         } catch (error) {
           console.error('[opencode-pty] failed to reset notifier during cleanup', error)
         }
@@ -135,6 +142,21 @@ export const Plugin: PluginV2 = define({
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError'
+}
+
+function activateNotifier(notifier: V2SessionNotifier): void {
+  if (activeNotifiers.length === 0) displacedNotifier = manager.getNotifier()
+  activeNotifiers.push(notifier)
+}
+
+function deactivateNotifier(notifier: V2SessionNotifier): void {
+  const notifierIndex = activeNotifiers.lastIndexOf(notifier)
+  if (notifierIndex !== -1) activeNotifiers.splice(notifierIndex, 1)
+
+  if (manager.getNotifier() === notifier) {
+    manager.setNotifier(activeNotifiers.at(-1) ?? displacedNotifier ?? null)
+  }
+  if (activeNotifiers.length === 0) displacedNotifier = undefined
 }
 
 export default Plugin
