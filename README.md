@@ -70,6 +70,8 @@ OpenCode will automatically install the plugin on next run.
 
 > [!WARNING]
 > **Known OpenCode V2 gap:** `notifyOnExit` is covered by the simulated V2 host tests, but a live OpenCode V2 session did not receive the expected `<pty_exited>` prompt after a PTY exited with code 7. The plugin remained active, the PTY exited and was cleaned up, and the server log contained no notification-delivery error. Tool registration, slash commands, PTY operations, session-deletion cleanup, and graceful-restart cleanup all passed live. Until the host notification path is resolved, use `pty_read` or `pty_list` to confirm completion in V2 sessions.
+>
+> Related reports include [opencode-pty #54](https://github.com/shekohex/opencode-pty/issues/54) and OpenCode [#32010](https://github.com/anomalyco/opencode/issues/32010) / [#46842](https://github.com/anomalyco/opencode/issues/46842). Those reports involve a persisted notification or logged delivery failure, so none exactly matches the live V2 evidence above.
 
 ## Updating
 
